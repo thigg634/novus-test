@@ -1,6 +1,6 @@
 // ==================== controllers/contactController.js ====================
 const Contact = require('../models/Contact');
-const { sendContactNotification } = require('../utils/emailService');
+const { sendContactNotification } = require('../utils/emailservice');
 
 exports.createContact = async (req, res) => {
   try {
