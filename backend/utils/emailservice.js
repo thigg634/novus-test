@@ -28,7 +28,7 @@ const initializeBrevoClient = () => {
     const apiInstance = new brevo.TransactionalEmailsApi();
 
     // new SDK uses setApiKey()
-    apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, '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');
+    apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
     console.log("✅ Brevo client initialized successfully");
     return apiInstance;
