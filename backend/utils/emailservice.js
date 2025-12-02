@@ -37,6 +37,8 @@ const createTransporter = () => {
       maxMessages: 100,
     });
 
+
+    
     // Verify connection
     transporter.verify((error) => {
       if (error) {
