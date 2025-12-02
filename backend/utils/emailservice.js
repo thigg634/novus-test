@@ -1,64 +1,44 @@
 // ==================== utils/emailService.js ====================
-const nodemailer = require("nodemailer");
-const { format } = require("date-fns");
-
+const brevo = require('@getbrevo/brevo');
+const { format } = require('date-fns');
 require('dotenv').config();
 
-// Validate environment variables
+// Validate env config
 const validateEnvVars = () => {
-  const required = ["EMAIL_USER", "EMAIL_PASSWORD"];
-  const missing = required.filter((varName) => !process.env[varName]);
+  const required = ["BREVO_API_KEY", "BREVO_SENDER_EMAIL", "BREVO_SENDER_NAME"];
+  const missing = required.filter(k => !process.env[k]);
 
   if (missing.length > 0) {
-    console.error(
-      `❌ Missing required environment variables: ${missing.join(", ")}`
-    );
+    console.error("❌ Missing Brevo environment variables:", missing.join(", "));
     return false;
   }
   return true;
 };
 
-// Create reusable transporter with better configuration
-const createTransporter = () => {
-  if (!validateEnvVars()) {
-    console.warn("⚠️ Email service running in limited mode");
-    return null;
-  }
+/**
+ * NEW Brevo client initializer
+ * Fully compatible with @getbrevo/brevo latest SDK
+ */
+let brevoClient = null;
+
+const initializeBrevoClient = () => {
+  if (!validateEnvVars()) return null;
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
-      },
-      pool: true,
-      maxConnections: 5,
-      maxMessages: 100,
-    });
+    const apiInstance = new brevo.TransactionalEmailsApi();
 
+    // new SDK uses setApiKey()
+    apiInstance.setApiKey(brevo.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
-    
-    // Verify connection
-    transporter.verify((error) => {
-      if (error) {
-        console.error(
-          "❌ Email transporter verification failed:",
-          error.message
-        );
-      } else {
-        console.log("✅ Email transporter ready");
-      }
-    });
-
-    return transporter;
+    console.log("✅ Brevo client initialized successfully");
+    return apiInstance;
   } catch (error) {
-    console.error("❌ Failed to create email transporter:", error.message);
+    console.error("❌ Failed to initialize Brevo client:", error.message);
     return null;
   }
 };
 
-const transporter = createTransporter();
+brevoClient = initializeBrevoClient();
 
 // Helper function to format date
 const formatBookingDate = (dateString) => {
@@ -75,7 +55,7 @@ const formatBookingDate = (dateString) => {
   }
 };
 
-// Booking confirmation email template
+// Booking confirmation email template (unchanged)
 const getBookingConfirmationHTML = (booking) => {
   const formattedDate = formatBookingDate(booking.date);
 
@@ -248,7 +228,7 @@ const getBookingConfirmationHTML = (booking) => {
   `;
 };
 
-// Contact notification email template
+// Contact notification email template (unchanged)
 const getContactNotificationHTML = (contact) => {
   const receivedTime = contact.created_at
     ? new Date(contact.created_at).toLocaleString()
@@ -389,6 +369,44 @@ const getContactNotificationHTML = (contact) => {
   `;
 };
 
+// Send email via Brevo SDK
+const sendViaBrevo = async (emailConfig) => {
+  if (!brevoClient) {
+    console.error("❌ Brevo client not initialized");
+    return false;
+  }
+
+  try {
+    const email = new brevo.SendSmtpEmail();
+
+    email.sender = {
+      name: process.env.BREVO_SENDER_NAME,
+      email: process.env.BREVO_SENDER_EMAIL
+    };
+
+    email.to = emailConfig.to;
+    email.subject = emailConfig.subject;
+    email.htmlContent = emailConfig.htmlContent;
+
+    if (emailConfig.replyTo) email.replyTo = emailConfig.replyTo;
+    if (emailConfig.headers) email.headers = emailConfig.headers;
+    if (emailConfig.params) email.params = emailConfig.params;
+
+    const data = await brevoClient.sendTransacEmail(email);
+
+    console.log("✅ Email sent successfully:", data);
+    return true;
+  } catch (error) {
+    console.error("❌ Error sending email via Brevo:", error.message);
+
+    if (error.response && error.response.body) {
+      console.error("Brevo Error:", error);
+    }
+
+    return false;
+  }
+};
+
 // Main email sending functions - KEEPING THE SAME EXPORT STRUCTURE
 exports.sendBookingConfirmation = async (booking) => {
   // Validate input
@@ -403,33 +421,22 @@ exports.sendBookingConfirmation = async (booking) => {
     return false;
   }
 
-  if (!transporter) {
-    console.error("❌ Email transporter not available");
-    return false;
-  }
-
-   validateEnvVars();
-
-  const mailOptions = {
-    from: `"NOVUS" <${process.env.EMAIL_USER}>`,
-    to: booking.email,
+  const emailConfig = {
+    to: [
+      {
+        email: booking.email,
+        name: booking.name
+      }
+    ],
     subject: "Booking Confirmation - NOVUS Consultation",
-    html: getBookingConfirmationHTML(booking),
-
+    htmlContent: getBookingConfirmationHTML(booking),
+    replyTo: {
+      email: process.env.BREVO_SENDER_EMAIL,
+      name: process.env.BREVO_SENDER_NAME
+    }
   };
 
-  try {
-    await transporter.sendMail(mailOptions);
-    console.log(`✅ Booking confirmation email sent to: ${booking.email}`);
-    return true;
-  } catch (error) {
-    console.error("❌ Email sending failed:", error.message);
-    // Log detailed error for debugging
-    if (error.response) {
-      console.error("SMTP Error:", error.response);
-    }
-    return false;
-  }
+  return await sendViaBrevo(emailConfig);
 };
 
 exports.sendContactNotification = async (contact) => {
@@ -439,54 +446,89 @@ exports.sendContactNotification = async (contact) => {
     return false;
   }
 
-  if (!transporter) {
-    console.error("❌ Email transporter not available");
-    return false;
-  }
-
-  const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.BREVO_SENDER_EMAIL;
   if (!adminEmail) {
     console.error("❌ No admin email configured");
     return false;
   }
 
-  const mailOptions = {
-    from: `"NOVUS Website" <${process.env.EMAIL_USER}>`,
-    to: adminEmail,
+  const emailConfig = {
+    to: [
+      {
+        email: adminEmail,
+        name: "NOVUS Admin"
+      }
+    ],
     subject: `New Contact Message from ${contact.name}`,
-    html: getContactNotificationHTML(contact),
+    htmlContent: getContactNotificationHTML(contact),
+    replyTo: {
+      email: contact.email,
+      name: contact.name
+    }
+  };
 
+  return await sendViaBrevo(emailConfig);
+};
+
+// Test function for Brevo
+exports.testEmailService = async () => {
+  if (!brevoClient) {
+    return { success: false, message: "Brevo client not initialized" };
+  }
+
+  const testEmailConfig = {
+    to: [
+      {
+        email: process.env.BREVO_SENDER_EMAIL, // Send test to yourself
+        name: "Test Recipient"
+      }
+    ],
+    subject: "Brevo Email Service Test",
+    htmlContent: `
+      <html>
+        <body>
+          <h1>✅ Brevo Email Service Test</h1>
+          <p>If you're reading this, Brevo is configured correctly!</p>
+          <p><strong>Sender:</strong> ${process.env.BREVO_SENDER_NAME} &lt;${process.env.BREVO_SENDER_EMAIL}&gt;</p>
+          <p><strong>Timestamp:</strong> ${new Date().toLocaleString()}</p>
+        </body>
+      </html>
+    `
   };
 
   try {
-    await transporter.sendMail(mailOptions);
-    console.log("✅ Contact notification email sent");
-    return true;
+    const result = await sendViaBrevo(testEmailConfig);
+    return {
+      success: result,
+      message: result ? "Brevo email service is working" : "Failed to send test email"
+    };
   } catch (error) {
-    console.error("❌ Email sending failed:", error.message);
-    // Log detailed error for debugging
-    if (error.response) {
-      console.error("SMTP Error:", error.response);
-    }
-    return false;
+    return {
+      success: false,
+      message: `Test failed: ${error.message}`
+    };
   }
 };
 
-// Optional: Add a test function (won't break existing code)
-exports.testEmailService = async () => {
-  if (!transporter) {
-    return { success: false, message: "Transporter not initialized" };
-  }
-
-  try {
-    await transporter.verify();
-    return { success: true, message: "Email service is ready" };
-  } catch (error) {
-    return { success: false, message: error.message };
-  }
-};
-
-// Optional: Add a simple health check
+// Health check function
 exports.isEmailServiceReady = () => {
-  return !!transporter;
+  return brevoClient !== null && validateEnvVars();
+};
+
+// Optional: Reinitialize function if API key changes
+exports.reinitializeClient = () => {
+  brevoClient = initializeBrevoClient();
+  return brevoClient !== null;
+};
+
+// Optional: Get sender info
+exports.getSenderInfo = () => {
+  return {
+    sender: {
+      name: process.env.BREVO_SENDER_NAME,
+      email: process.env.BREVO_SENDER_EMAIL
+    },
+    isConfigured: validateEnvVars(),
+    clientInitialized: brevoClient !== null
+  };
 };
