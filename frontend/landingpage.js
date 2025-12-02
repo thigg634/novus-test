@@ -1,5 +1,5 @@
 // ==================== Configuration ====================
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://novus-test.on.shiper.app/api';
 
 // ==================== State Management ====================
 let currentSlide = 0;
