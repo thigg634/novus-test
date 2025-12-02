@@ -49,7 +49,7 @@ exports.createBooking = async (req, res) => {
     // Check if slot is already booked
     const existingBooking = await Booking.findByDateAndTime(date, timeSlot);
     if (existingBooking) {
-      return res.status(400).json({ error: 'This time slot is already booked' });
+      return res.status(400).json({ error: "This time slot is already booked" });
     }
     
     // Create booking
@@ -61,22 +61,36 @@ exports.createBooking = async (req, res) => {
       date,
       timeSlot
     });
-    
-    // Send confirmation email
-    await sendBookingConfirmation(booking);
-    
-    res.status(201).json({
-      message: 'Booking created successfully',
+
+    // ---- DO NOT BLOCK THE RESPONSE ----
+    // Run email in background (fire-and-forget)
+    sendBookingConfirmation(booking)
+      .then(success => {
+        if (!success) {
+          console.error("⚠️ Email failed for booking:", booking.id);
+        }
+      })
+      .catch(err => {
+        console.error("⚠️ Email error (unexpected):", err);
+      });
+
+    // ---- IMMEDIATE RESPONSE ----
+    return res.status(201).json({
+      message: "Booking created successfully",
       booking
     });
+
   } catch (error) {
-    console.error('Create booking error:', error);
-    if (error.code === '23505') { // Unique violation
-      return res.status(400).json({ error: 'This time slot is already booked' });
+    console.error("Create booking error:", error);
+
+    if (error.code === "23505") {
+      return res.status(400).json({ error: "This time slot is already booked" });
     }
-    res.status(500).json({ error: 'Failed to create booking' });
+
+    return res.status(500).json({ error: "Failed to create booking" });
   }
 };
+
 
 exports.getAllBookings = async (req, res) => {
   try {
