@@ -1,7 +1,7 @@
 // ==================== controllers/bookingController.js ====================
 const Booking = require('../models/Booking');
 const Settings = require('../models/Settings');
-const { sendBookingConfirmation } = require('../utils/emailService');
+const { sendBookingConfirmation, testEmailService } = require('../utils/emailService');
 
 exports.getAvailableSlots = async (req, res) => {
   try {
@@ -22,6 +22,23 @@ exports.getAvailableSlots = async (req, res) => {
   } catch (error) {
     console.error('Get available slots error:', error);
     res.status(500).json({ error: 'Failed to get available slots' });
+  }
+};
+
+exports.testemail = async (req, res) => {
+  try {
+    
+    await testEmailService();
+    
+    res.status(201).json({
+      message: 'email created successfully',
+    });
+  } catch (error) {
+    console.error('Create email error:', error);
+    if (error.code === '23505') { // Unique violation
+      return res.status(400).json({ error: 'This time slot is already booked' });
+    }
+    res.status(500).json({ error: 'Failed to create booking' });
   }
 };
 
