@@ -1,7 +1,7 @@
 // ==================== controllers/bookingController.js ====================
 const Booking = require('../models/Booking');
 const Settings = require('../models/Settings');
-const { sendBookingConfirmation, testEmailService } = require('../utils/emailService');
+const { sendBookingConfirmation, testEmailService } = require('../utils/emailservice');
 
 exports.getAvailableSlots = async (req, res) => {
   try {
